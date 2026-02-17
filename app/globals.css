@@ -23,6 +23,7 @@ body {
   background: var(--bg);
   color: var(--text);
   line-height: 1.35;
+  -webkit-text-size-adjust: 100%;
 }
 
 .loading-screen {
@@ -1041,6 +1042,26 @@ button:hover {
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .nav {
+    width: 100%;
+    overflow-x: auto;
+    white-space: nowrap;
+    gap: 0;
+    padding-bottom: 2px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav a {
+    display: inline-flex;
+    padding: 6px 2px;
   }
 
   .status-wrap {
@@ -1093,6 +1114,96 @@ button:hover {
   }
 
   .project-select-item {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 430px) {
+  .container {
+    margin: 12px auto 26px;
+    padding: 0 10px;
+  }
+
+  .today-card,
+  .month-card,
+  .week-card {
+    padding: 12px;
+    border-radius: 14px;
+  }
+
+  .today-form,
+  .month-form {
+    gap: 10px;
+  }
+
+  .today-block,
+  .month-panel,
+  .week-block {
+    padding: 10px;
+    border-radius: 12px;
+    gap: 7px;
+  }
+
+  .today-head {
+    margin-bottom: 2px;
+  }
+
+  .today-head h1,
+  .date-link {
+    font-size: 20px;
+    line-height: 1.2;
+  }
+
+  .status-caption {
+    font-size: 11px;
+  }
+
+  input,
+  select,
+  textarea {
+    min-height: 42px;
+    font-size: 16px;
+    padding: 9px 10px;
+  }
+
+  button {
+    min-height: 42px;
+    font-size: 15px;
+  }
+
+  .btn-compact {
+    min-width: 0;
+    width: 100%;
+    justify-self: stretch;
+  }
+
+  .duration-pair {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .duration-pair-compact input {
+    width: 64px;
+    min-width: 64px;
+  }
+
+  .segment span,
+  .check-pill span,
+  .score-pill span {
+    min-height: 36px;
+    font-size: 14px;
+    border-radius: 12px;
+  }
+
+  .project-card summary {
+    flex-wrap: wrap;
+  }
+
+  .project-card-head {
+    width: 100%;
+  }
+
+  .month-actions {
     grid-template-columns: 1fr;
   }
 }
