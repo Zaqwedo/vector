@@ -8,8 +8,16 @@ declare module "pg" {
     release(): void;
   }
 
+  export interface PoolConfig {
+    connectionString?: string;
+    max?: number;
+    idleTimeoutMillis?: number;
+    connectionTimeoutMillis?: number;
+    allowExitOnIdle?: boolean;
+  }
+
   export class Pool {
-    constructor(config?: { connectionString?: string });
+    constructor(config?: PoolConfig);
     query<T = unknown>(text: string, values?: unknown[]): Promise<QueryResult<T>>;
     connect(): Promise<PoolClient>;
   }

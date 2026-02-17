@@ -12,7 +12,14 @@ const getPool = () => {
   if (!connectionString) {
     throw new Error("DATABASE_URL is not set");
   }
-  pool = new Pool({ connectionString });
+  pool = new Pool({
+    connectionString,
+    // Serverless + Supabase pooler: keep pool tiny to avoid exhausting backend auth slots.
+    max: 1,
+    idleTimeoutMillis: 5000,
+    connectionTimeoutMillis: 10000,
+    allowExitOnIdle: true
+  });
   return pool;
 };
 
