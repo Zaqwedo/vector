@@ -3,17 +3,25 @@ import { AutoDateInput } from "@/components/AutoDateInput";
 import { Shell } from "@/components/Shell";
 import { getTodayIsoDate, getWeekRange, isValidIsoDate } from "@/lib/date";
 import { getWeekByStart, getWeekDeviationFlags, getWeekStatus } from "@/lib/domain";
+import type { Trend } from "@/lib/types";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 const getParam = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 export const dynamic = "force-dynamic";
 
+const trendArrow: Record<Trend, string> = {
+  up: "↑",
+  flat: "→",
+  down: "↓",
+  na: "·"
+};
+
 export default async function WeekPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
   const today = getTodayIsoDate();
   const requestedDate = getParam(params.date);
-  const selectedDate = isValidIsoDate(requestedDate) ? requestedDate : today;
+  const selectedDate = requestedDate && isValidIsoDate(requestedDate) ? requestedDate : today;
   const range = getWeekRange(selectedDate);
 
   const [weekRow, deviation] = await Promise.all([getWeekByStart(range.start), getWeekDeviationFlags(range.start, range.end)]);
@@ -60,10 +68,34 @@ export default async function WeekPage({ searchParams }: { searchParams: Promise
           </div>
         </div>
 
+        <section className="today-section">
+          <h2>Сон</h2>
+          <p className="month-meta">
+            avg {deviation.current.sleep_avg === null ? "—" : `${deviation.current.sleep_avg.toFixed(1)}h`} (n={deviation.current.sleep_tracked_days}){" "}
+            {trendArrow[deviation.sleepTrend]}
+          </p>
+          {deviation.current.sleep_tracked_days >= 4 && deviation.current.sleep_consistency !== null ? (
+            <p className="month-meta">Разброс {deviation.current.sleep_consistency.toFixed(1)}h</p>
+          ) : (
+            <p className="month-meta">Разброс —</p>
+          )}
+        </section>
+
         <div className="status-wrap">
           <div className={`status status-${status}`}>{status === "red" ? "КРАСНЫЙ" : status === "yellow" ? "ЖЁЛТЫЙ" : "ЗЕЛЁНЫЙ"}</div>
           <ul className="flags">
-            {deviation.flags.length ? deviation.flags.map((f) => <li key={f}>{f}</li>) : <li>Отклонений не обнаружено</li>}
+            {deviation.flags.length || deviation.softFlags.length ? (
+              <>
+                {deviation.flags.map((f) => (
+                  <li key={f}>{f}</li>
+                ))}
+                {deviation.softFlags.map((f) => (
+                  <li key={f}>{f}</li>
+                ))}
+              </>
+            ) : (
+              <li>Отклонений не обнаружено</li>
+            )}
           </ul>
         </div>
 

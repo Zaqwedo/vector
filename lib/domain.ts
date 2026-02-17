@@ -1,6 +1,24 @@
 import { q } from "@/lib/db";
 import { addDays, getMonthRange, getWeekRange, parseISODate, toISODate } from "@/lib/date";
-import type { DayRow, IncomeStatusKind, MonthReviewRow, TrainingType, VectorRow, WeekRow } from "@/lib/types";
+import type { DayProjectEntry, DayRow, IncomeStatusKind, MonthReviewRow, ProjectRow, TrainingType, Trend, VectorRow, WeekRow } from "@/lib/types";
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const roundToTwo = (value: number) => Math.round(value * 100) / 100;
+const EPSILON = 0.1;
+
+export const normalizeSleepHours = (value: number | string | null | undefined): number | null => {
+  if (value === null || value === undefined || value === "") return null;
+  const numeric = typeof value === "number" ? value : Number(String(value).replace(",", "."));
+  if (!Number.isFinite(numeric)) return null;
+  return roundToTwo(clamp(numeric, 0, 24));
+};
+
+export const getTrend = (current: number | null, previous: number | null, eps = EPSILON): Trend => {
+  if (current === null || previous === null) return "na";
+  const delta = current - previous;
+  if (Math.abs(delta) <= eps) return "flat";
+  return delta > 0 ? "up" : "down";
+};
 
 export const normalizeTrainingModes = (value: string[] | string | null | undefined): TrainingType[] => {
   const allowed = new Set<TrainingType>(["none", "light", "strength", "cardio"]);
@@ -34,14 +52,44 @@ export const getTodayStatus = (entry: DayRow | null) => {
 };
 
 export const ensureVector = async (): Promise<VectorRow> => {
-  const existing = await q<VectorRow>("SELECT * FROM vector WHERE id = 1");
+  const existing = await q<VectorRow>(
+    `SELECT
+      id,
+      start_date::text,
+      horizon_months,
+      income_target,
+      sleep_target_hours::double precision AS sleep_target_hours,
+      weight_min::double precision AS weight_min,
+      weight_max::double precision AS weight_max,
+      project_goal,
+      max_hours_week,
+      created_at::text,
+      updated_at::text
+     FROM vector
+     WHERE id = 1`
+  );
   if (existing.rows[0]) return existing.rows[0];
   await q(
     `INSERT INTO vector
-      (id, start_date, horizon_months, income_target, weight_min, weight_max, project_goal, max_hours_week)
-     VALUES (1, CURRENT_DATE, 12, 500, 73, 75, '1 completed commercial product', 35)`
+      (id, start_date, horizon_months, income_target, sleep_target_hours, weight_min, weight_max, project_goal, max_hours_week)
+     VALUES (1, CURRENT_DATE, 12, 500, NULL, 73, 75, '1 completed commercial product', 35)`
   );
-  const created = await q<VectorRow>("SELECT * FROM vector WHERE id = 1");
+  const created = await q<VectorRow>(
+    `SELECT
+      id,
+      start_date::text,
+      horizon_months,
+      income_target,
+      sleep_target_hours::double precision AS sleep_target_hours,
+      weight_min::double precision AS weight_min,
+      weight_max::double precision AS weight_max,
+      project_goal,
+      max_hours_week,
+      created_at::text,
+      updated_at::text
+     FROM vector
+     WHERE id = 1`
+  );
   return created.rows[0];
 };
 
@@ -50,22 +98,51 @@ export const ensureActiveProject = async () => {
   const active = await q<{ id: number; name: string }>("SELECT id, name FROM projects WHERE is_active = TRUE LIMIT 1");
   if (active.rows[0]) return active.rows[0];
   const inserted = await q<{ id: number; name: string }>(
-    "INSERT INTO projects (name, is_active) VALUES ($1, TRUE) RETURNING id, name",
-    [vector.project_goal]
+    "INSERT INTO projects (name, max_hours_week, project_goal, is_active) VALUES ($1, $2, $3, TRUE) RETURNING id, name",
+    [vector.project_goal, vector.max_hours_week, vector.project_goal]
   );
   return inserted.rows[0];
 };
 
+export const getProjects = async (): Promise<ProjectRow[]> => {
+  const result = await q<ProjectRow>(
+    `SELECT
+      id,
+      name,
+      max_hours_week,
+      project_goal,
+      is_active,
+      created_at::text,
+      updated_at::text
+     FROM projects
+     ORDER BY updated_at DESC, id DESC`
+  );
+  return result.rows;
+};
+
 export const getDayByDate = async (isoDate: string): Promise<DayRow | null> => {
   const day = await q<
-    Omit<DayRow, "training_modes"> & {
+    Omit<DayRow, "training_modes" | "project_entries"> & {
       training_modes: string[];
+      project_entries: DayProjectEntry[];
     }
   >(
-    `SELECT d.id, d.date::text, d.deep_minutes, d.noise_minutes, d.steps, d.key_move, d.created_at::text, d.updated_at::text,
-            COALESCE(array_agg(dt.type) FILTER (WHERE dt.type IS NOT NULL), '{}') AS training_modes
+    `SELECT d.id, d.date::text, d.deep_minutes, d.noise_minutes, d.sleep_hours::double precision AS sleep_hours, d.sleep_quality, d.sleep_note, d.steps, d.key_move, d.created_at::text, d.updated_at::text,
+            COALESCE(array_agg(dt.type) FILTER (WHERE dt.type IS NOT NULL), '{}') AS training_modes,
+            COALESCE(
+              (
+                jsonb_agg(
+                  DISTINCT jsonb_build_object(
+                    'project_id', dp.project_id,
+                    'key_move', dp.key_move
+                  )
+                ) FILTER (WHERE dp.project_id IS NOT NULL)
+              )::jsonb,
+              '[]'::jsonb
+            ) AS project_entries
      FROM days d
      LEFT JOIN day_training dt ON dt.day_id = d.id
+     LEFT JOIN day_project dp ON dp.day_id = d.id
      WHERE d.date = $1::date
      GROUP BY d.id`,
     [isoDate]
@@ -82,8 +159,12 @@ export const upsertDay = async (payload: {
   date: string;
   deep_minutes: number;
   noise_minutes: number;
+  sleep_hours: number | null;
+  sleep_quality: number | null;
+  sleep_note: string | null;
   steps: number;
   key_move: string | null;
+  project_entries: DayProjectEntry[];
   training_modes: TrainingType[];
 }) => {
   const existing = await q<{ id: number }>("SELECT id FROM days WHERE date = $1::date", [payload.date]);
@@ -92,16 +173,16 @@ export const upsertDay = async (payload: {
     dayId = existing.rows[0].id;
     await q(
       `UPDATE days
-       SET deep_minutes = $1, noise_minutes = $2, steps = $3, key_move = $4, updated_at = NOW()
-       WHERE id = $5`,
-      [payload.deep_minutes, payload.noise_minutes, payload.steps, payload.key_move, dayId]
+       SET deep_minutes = $1, noise_minutes = $2, sleep_hours = $3, sleep_quality = $4, sleep_note = $5, steps = $6, key_move = $7, updated_at = NOW()
+       WHERE id = $8`,
+      [payload.deep_minutes, payload.noise_minutes, payload.sleep_hours, payload.sleep_quality, payload.sleep_note, payload.steps, payload.key_move, dayId]
     );
   } else {
     const inserted = await q<{ id: number }>(
-      `INSERT INTO days (date, deep_minutes, noise_minutes, steps, key_move)
-       VALUES ($1::date, $2, $3, $4, $5)
+      `INSERT INTO days (date, deep_minutes, noise_minutes, sleep_hours, sleep_quality, sleep_note, steps, key_move)
+       VALUES ($1::date, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id`,
-      [payload.date, payload.deep_minutes, payload.noise_minutes, payload.steps, payload.key_move]
+      [payload.date, payload.deep_minutes, payload.noise_minutes, payload.sleep_hours, payload.sleep_quality, payload.sleep_note, payload.steps, payload.key_move]
     );
     dayId = inserted.rows[0].id;
   }
@@ -110,6 +191,11 @@ export const upsertDay = async (payload: {
   const modes = payload.training_modes.filter((m) => m !== "none");
   for (const mode of modes) {
     await q("INSERT INTO day_training (day_id, type) VALUES ($1, $2)", [dayId, mode]);
+  }
+
+  await q("DELETE FROM day_project WHERE day_id = $1", [dayId]);
+  for (const entry of payload.project_entries) {
+    await q("INSERT INTO day_project (day_id, project_id, key_move) VALUES ($1, $2, $3)", [dayId, entry.project_id, entry.key_move]);
   }
 };
 
@@ -145,13 +231,36 @@ export const getRangeDayStats = async (startIso: string, endIso: string) => {
     key_moves_count: string;
     trainings_count: string;
     days_count: string;
+    sleep_avg: string | null;
+    sleep_min: string | null;
+    sleep_max: string | null;
+    sleep_tracked_days: string;
   }>(
     `SELECT
       COALESCE(SUM(d.deep_minutes), 0)::text AS deep_minutes_total,
       COALESCE(SUM(d.noise_minutes), 0)::text AS noise_minutes_total,
       COALESCE(SUM(d.steps), 0)::text AS steps_total,
-      COALESCE(SUM(CASE WHEN d.key_move IS NOT NULL AND btrim(d.key_move) <> '' THEN 1 ELSE 0 END), 0)::text AS key_moves_count,
+      COALESCE(
+        SUM(
+          CASE
+            WHEN EXISTS (SELECT 1 FROM day_project dp0 WHERE dp0.day_id = d.id)
+              THEN (
+                SELECT COUNT(*)
+                FROM day_project dp1
+                WHERE dp1.day_id = d.id
+                  AND dp1.key_move IS NOT NULL
+                  AND btrim(dp1.key_move) <> ''
+              )
+            ELSE CASE WHEN d.key_move IS NOT NULL AND btrim(d.key_move) <> '' THEN 1 ELSE 0 END
+          END
+        ),
+        0
+      )::text AS key_moves_count,
       COALESCE(SUM(CASE WHEN EXISTS (SELECT 1 FROM day_training dt WHERE dt.day_id = d.id) THEN 1 ELSE 0 END), 0)::text AS trainings_count,
+      AVG(d.sleep_hours)::text AS sleep_avg,
+      MIN(d.sleep_hours)::text AS sleep_min,
+      MAX(d.sleep_hours)::text AS sleep_max,
+      COUNT(d.sleep_hours)::text AS sleep_tracked_days,
       COUNT(*)::text AS days_count
      FROM days d
      WHERE d.date BETWEEN $1::date AND $2::date`,
@@ -165,11 +274,16 @@ export const getRangeDayStats = async (startIso: string, endIso: string) => {
   const keyMoves = Number(row?.key_moves_count || 0);
   const trainings = Number(row?.trainings_count || 0);
   const daysCount = Number(row?.days_count || 0);
+  const sleepTrackedDays = Number(row?.sleep_tracked_days || 0);
+  const sleepAvg = row?.sleep_avg === null || row?.sleep_avg === undefined ? null : Number(row.sleep_avg);
+  const sleepMin = row?.sleep_min === null || row?.sleep_min === undefined ? null : Number(row.sleep_min);
+  const sleepMax = row?.sleep_max === null || row?.sleep_max === undefined ? null : Number(row.sleep_max);
 
   const tracked = deepMinutes + noiseMinutes;
   const noisePercent = tracked > 0 ? Math.round((noiseMinutes / tracked) * 100) : 0;
   const avgSteps = daysCount > 0 ? Math.round(stepsTotal / daysCount) : 0;
   const speed = deepMinutes / 60 + keyMoves * 2;
+  const sleepConsistency = sleepMin !== null && sleepMax !== null ? Number((sleepMax - sleepMin).toFixed(2)) : null;
 
   return {
     deep_minutes_total: deepMinutes,
@@ -179,16 +293,22 @@ export const getRangeDayStats = async (startIso: string, endIso: string) => {
     avg_steps: avgSteps,
     days_count: daysCount,
     noise_percent: noisePercent,
-    speed
+    speed,
+    sleep_avg: sleepAvg === null ? null : Number(sleepAvg.toFixed(2)),
+    sleep_min: sleepMin,
+    sleep_max: sleepMax,
+    sleep_tracked_days: sleepTrackedDays,
+    sleep_consistency: sleepConsistency
   };
 };
 
 export const getWeekDeviationFlags = async (weekStart: string, weekEnd: string) => {
-  const current = await getRangeDayStats(weekStart, weekEnd);
+  const [current, vector] = await Promise.all([getRangeDayStats(weekStart, weekEnd), ensureVector()]);
   const prevRange = getWeekRange(toISODate(addDays(parseISODate(weekStart), -1)));
   const prev = await getRangeDayStats(prevRange.start, prevRange.end);
 
   const flags: string[] = [];
+  const softFlags: string[] = [];
   if (current.key_moves_count === 0 && prev.key_moves_count === 0) {
     flags.push("Нет стратегических шагов 2 недели подряд");
   }
@@ -198,7 +318,21 @@ export const getWeekDeviationFlags = async (weekStart: string, weekEnd: string) 
   if (current.deep_minutes_total < 360 && prev.deep_minutes_total < 360) {
     flags.push("Глубокая работа < 6 часов 2 недели подряд");
   }
-  return { flags, current };
+
+  const sleepTrend = getTrend(current.sleep_avg, prev.sleep_avg);
+  const sleepVsTarget =
+    current.sleep_avg !== null && vector.sleep_target_hours !== null
+      ? Number((current.sleep_avg - Number(vector.sleep_target_hours)).toFixed(2))
+      : null;
+
+  if (current.sleep_tracked_days < 4) {
+    softFlags.push("сон: мало данных");
+  }
+  if (sleepVsTarget !== null && sleepVsTarget < -EPSILON) {
+    softFlags.push("сон: ниже цели");
+  }
+
+  return { flags, softFlags, current, sleepTrend, sleepVsTarget };
 };
 
 export const getWeekStatus = (trajectoryQuality: number | null, flagsCount: number) => {
@@ -224,6 +358,18 @@ export const getMonthWeeks = (monthKey: string) => {
     ws = addDays(ws, 7);
   }
   return weeks;
+};
+
+const getPreviousMonthKey = (monthKey: string) => {
+  const [year, month] = monthKey.split("-").map(Number);
+  const prev = new Date(year, month - 2, 1);
+  return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`;
+};
+
+export const getSleepTrendVsPrevMonth = async (monthKey: string, currentSleepAvg: number | null): Promise<Trend> => {
+  const prevRange = getMonthRange(getPreviousMonthKey(monthKey));
+  const prevStats = await getRangeDayStats(prevRange.start, prevRange.end);
+  return getTrend(currentSleepAvg, prevStats.sleep_avg);
 };
 
 export const getMonthReview = async (monthKey: string): Promise<MonthReviewRow | null> => {
@@ -295,6 +441,7 @@ export const updateVector = async (payload: {
   start_date: string;
   horizon_months: number;
   income_target: number;
+  sleep_target_hours: number | null;
   weight_min: number;
   weight_max: number;
   project_goal: string;
@@ -303,19 +450,21 @@ export const updateVector = async (payload: {
   await ensureVector();
   await q(
     `UPDATE vector
-     SET start_date = $1::date,
+     SET start_date = COALESCE(NULLIF($1, '')::date, CURRENT_DATE),
          horizon_months = $2,
          income_target = $3,
-         weight_min = $4,
-         weight_max = $5,
-         project_goal = $6,
-         max_hours_week = $7,
+         sleep_target_hours = $4,
+         weight_min = $5,
+         weight_max = $6,
+         project_goal = $7,
+         max_hours_week = $8,
          updated_at = NOW()
      WHERE id = 1`,
     [
       payload.start_date,
       payload.horizon_months,
       payload.income_target,
+      payload.sleep_target_hours,
       payload.weight_min,
       payload.weight_max,
       payload.project_goal,
@@ -323,10 +472,72 @@ export const updateVector = async (payload: {
     ]
   );
 
-  const activeProject = await q<{ id: number }>("SELECT id FROM projects WHERE is_active = TRUE LIMIT 1");
-  if (activeProject.rows[0]) {
-    await q("UPDATE projects SET name = $1, updated_at = NOW() WHERE id = $2", [payload.project_goal, activeProject.rows[0].id]);
-  } else {
-    await q("INSERT INTO projects (name, is_active) VALUES ($1, TRUE)", [payload.project_goal]);
+};
+
+export const addOrActivateProject = async (payload: { name: string; max_hours_week: number; project_goal: string | null }) => {
+  const name = payload.name.trim();
+  const maxHours = Number.isFinite(payload.max_hours_week) ? Math.max(0, Math.trunc(payload.max_hours_week)) : 0;
+  const goal = payload.project_goal?.trim() || null;
+  if (!name) return;
+
+  await q("UPDATE projects SET is_active = FALSE, updated_at = NOW() WHERE is_active = TRUE");
+
+  const existing = await q<{ id: number }>("SELECT id FROM projects WHERE lower(name) = lower($1) LIMIT 1", [name]);
+  if (existing.rows[0]) {
+    await q("UPDATE projects SET is_active = TRUE, max_hours_week = $1, project_goal = $2, updated_at = NOW() WHERE id = $3", [maxHours, goal, existing.rows[0].id]);
+    return;
   }
+
+  await q("INSERT INTO projects (name, max_hours_week, project_goal, is_active) VALUES ($1, $2, $3, TRUE)", [name, maxHours, goal]);
+};
+
+export const updateProject = async (payload: { id: number; name: string; max_hours_week: number; project_goal: string | null }) => {
+  const name = payload.name.trim();
+  const maxHours = Number.isFinite(payload.max_hours_week) ? Math.max(0, Math.trunc(payload.max_hours_week)) : 0;
+  const goal = payload.project_goal?.trim() || null;
+  if (!name || !Number.isFinite(payload.id)) return;
+  await q("UPDATE projects SET name = $1, max_hours_week = $2, project_goal = $3, updated_at = NOW() WHERE id = $4", [
+    name,
+    maxHours,
+    goal,
+    payload.id
+  ]);
+};
+
+export const getNotesForDate = async (isoDate: string) => {
+  const result = await q<{ id: number; text: string; done: boolean; note_date: string }>(
+    `SELECT id, text, done, note_date::text
+     FROM note_items
+     WHERE note_date = $1::date
+     ORDER BY id ASC`,
+    [isoDate]
+  );
+  return result.rows;
+};
+
+export const getNotesArchive = async (todayIso: string, limit = 100) => {
+  const result = await q<{ id: number; text: string; done: boolean; note_date: string }>(
+    `SELECT id, text, done, note_date::text
+     FROM note_items
+     WHERE note_date < $1::date
+     ORDER BY note_date DESC, id DESC
+     LIMIT $2`,
+    [todayIso, limit]
+  );
+  return result.rows;
+};
+
+export const addNoteItem = async (payload: { note_date: string; text: string }) => {
+  const text = payload.text.trim();
+  if (!text) return;
+  await q("INSERT INTO note_items (note_date, text, done) VALUES ($1::date, $2, FALSE)", [payload.note_date, text]);
+};
+
+export const setNoteDone = async (payload: { id: number; done: boolean; note_date: string }) => {
+  await q(
+    `UPDATE note_items
+     SET done = $1, updated_at = NOW()
+     WHERE id = $2 AND note_date = $3::date`,
+    [payload.done, payload.id, payload.note_date]
+  );
 };

@@ -1,114 +1,110 @@
-# Vector OS (Next.js + TypeScript + Postgres)
+# Vector OS
 
-Vector OS migrated from native Node HTTP + in-memory storage to:
-- Next.js (App Router)
-- TypeScript
-- Server Actions
-- Postgres (Supabase-ready via `DATABASE_URL`)
+Персональный трекер в инженерно-минималистичном стиле: `Вектор` → `День` → `Неделя` → `Месяц`.
 
-## Tech stack
+## Стек
 
 - Next.js 15 (App Router)
+- TypeScript
 - React 19
-- TypeScript 5
-- PostgreSQL driver: `pg`
-- Server-side rendering + Server Actions (no Express)
+- PostgreSQL (`pg`)
+- Server Actions (без Express)
 
-## Requirements
+## Локальный запуск
 
-- Node.js 20+
-- PostgreSQL database (local or Supabase)
+1. Создайте `.env.local` в корне:
 
-## Environment
-
-Create `.env.local`:
-
-```bash
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/vectoros
+```env
+DATABASE_URL=postgresql://admin:admin@localhost:5432/vectoros
 ```
 
-## Install & run
+2. Установите зависимости:
 
 ```bash
 npm install
+```
+
+3. Запустите dev-сервер:
+
+```bash
 npm run dev
 ```
 
-Open: `http://localhost:3000`
+4. Откройте: [http://localhost:3000](http://localhost:3000)
 
-## Database schema
+## Экраны
 
-Schema file: `db/schema.sql`
+### `/today` — День
+- Заголовок `День · {дата}` с выбором даты.
+- Автоподгрузка записи выбранной даты.
+- `Обновлено · {время}` при наличии записи.
+- Для прошлой даты: `Просмотр прошлой даты` + возврат к сегодняшнему.
+- Блоки: `Фокус`, `Проект`, `Тело`.
+- Тренировки: multi-select, `Нет` эксклюзивный.
+- Кнопка: `Зафиксировать день`.
 
-It includes tables:
+### `/week` — Неделя
+- Выбор недели через дату.
+- Агрегаты на сервере: deep, strategic moves, trainings, avg steps, noise %, speed.
+- Статус недели: зелёный/жёлтый/красный + флаги отклонений.
+- Оценка траектории `1..5`.
+- Заметка недели.
+
+### `/month` — Месяц
+- Заголовок `Месяц · Mon YYYY` + статус дохода (`впереди / по плану / отставание`).
+- Два визуальных блока:
+  - `Общий итог`
+  - `По неделям`
+- В `Общий итог`: target/actual/delta, агрегаты фокуса и тела, оценка `1..5`, поле корректировки.
+- У поля факта дохода есть чек `Ввёл`.
+- Кнопки: `Сохранить месяц`, `Зафиксировать месяц`.
+- После фиксации: `Зафиксировано · {время}`, месяц read-only.
+
+### `/vector` — Вектор
+- Долгосрочные константы: старт, горизонт, доход, вес, цель проекта, лимит часов.
+
+## База данных
+
+Схема: `db/schema.sql`.
+
+Основные таблицы:
 - `vector`
-- `projects` (single active project via partial unique index)
+- `projects` (ограничение: только один активный проект)
 - `days`
 - `day_training`
 - `weeks`
 - `month_reviews`
-- `month_week_income`
+- `month_week_income` (поддержка недельного дохода на уровне модели)
 
-Schema is auto-ensured on first DB access by server code (`lib/db.ts`).
+Инициализация схемы происходит автоматически в `lib/db.ts` при первом обращении.
 
-## Routes
-
-- `/today`
-  - date picker in header
-  - loads existing day record or empty form
-  - shows `Обновлено · {время}` when record exists
-  - Focus / Project / Body sections
-  - save via Server Action
-- `/week`
-  - week selected by date picker
-  - weekly aggregates computed on server
-  - trajectory quality as 1..5 controls
-- `/month`
-  - "Общий итог" and "По неделям"
-  - income target/actual/delta + status
-  - monthly quality 1..5
-  - save vs lock
-  - after lock shows `Зафиксировано · {время}` and becomes read-only
-- `/vector`
-  - long-term parameters
-
-## Server-side logic
-
-All calculations are server-side (`lib/domain.ts`):
-- weekly aggregates
-- monthly aggregates
-- noise %
-- speed metric
-- income status: `впереди / по плану / отставание`
-
-## Project structure
+## Структура
 
 ```text
 app/
   actions.ts
+  globals.css
+  layout.tsx
+  page.tsx
   today/page.tsx
   week/page.tsx
   month/page.tsx
   vector/page.tsx
-  layout.tsx
-  globals.css
 components/
-  Shell.tsx
   AutoDateInput.tsx
+  Shell.tsx
 lib/
+  date.ts
   db.ts
   domain.ts
-  date.ts
   types.ts
 db/
   schema.sql
 ```
 
-## Deploy (Vercel)
+## Деплой
 
-1. Push repository to Git provider
-2. Import project in Vercel
-3. Set `DATABASE_URL` in Vercel env vars
-4. Deploy
-
-No custom server is required.
+Проект готов к Vercel:
+1. Подключить репозиторий.
+2. Добавить `DATABASE_URL` в Environment Variables.
+3. Запустить деплой.

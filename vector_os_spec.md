@@ -1,149 +1,124 @@
-# Vector OS — Conversation Memory (Spec v0.1)
+# Vector OS — Текущая продуктовая спецификация
 
-_Last updated: 2026-02-16 (Europe/Berlin)_
+_Обновлено: 2026-02-16_
 
-## 1) Core intent
-You want a **navigation layer over your life** — like a Jarvis / navigator:
-- You are the **driver** (no “guru”, no pushing or decision-making by others).
-- The system acts as **road signs + dashboard**:
-  - **Speed**
-  - **Deviation from route**
-  - **Trajectory quality**
-- Control must be **simple and clear** (not the main “activity”).
+## 1. Позиционирование
 
-## 2) Personal baseline & targets
-### Money
-- Current income: **250**
-- Goal: **maintain or multiply to ~2× (≈500+)** within 12 months
+Vector OS — личный инструмент системной навигации.
+Это не SaaS-витрина, не мотивационный трекер и не геймифицированный дневник.
 
-### Body / health
-- Current weight: **73 kg**
-- Target range: **73–75 kg (stay similar, max 75)**
-- Goal emphasis: **good health + good external condition** (“плотность”, solid presence)
+Принцип: фиксировать факты, видеть отклонения, корректировать курс.
 
-### Time budget
-- Project work: **15–25 h/week**
-- Max sustainable total for project layer: **up to 35 h/week**
-- Control/ops overhead: **≤ 40 min/week (less is better)**
+## 2. Продуктовая модель
 
-## 3) Strategy choice
-- Start with a **simple personal system** (V1) and run it for ~90 days to gain unique experience.
-- **Design V1 so it can scale into a SaaS** later (same data model / core flows).
-- Advanced “control engine” is potentially a **separate commercial product** later, enriched by real usage data.
+Сущности:
+- **Вектор** — долгосрочные ограничения и цель.
+- **День** — атомарные ежедневные факты.
+- **Неделя** — агрегаты и качество траектории.
+- **Месяц** — обзор, корректировка и фиксация периода.
 
-## 4) Desired “curator” model
-- Not a constant real human.
-- **Advisory + clear structure** fits:
-  - Advisory is “external radar” (monthly calibration), not a boss.
-- Primary need: **your own instrument**, customized; not rented or limited by someone else’s tooling.
+Ключевые сигналы:
+- speed,
+- noise ratio,
+- strategic moves,
+- trajectory quality,
+- income status относительно цели.
 
-## 5) V1 system principles
-1. **Minimal entities** (to avoid bureaucracy)
-2. **Fast daily logging** (1–2 minutes)
-3. **Weekly auto-summary** (generated)
-4. **Monthly calibration** (short)
-5. System overhead stays **below 5% of time**.
+## 3. Навигация
 
-## 6) Data model (V1)
-Keep only **3 object types**:
-1. **Vector** (annual / long horizon)
-2. **Day**
-3. **Week**
+Верхнее меню:
+- `Вектор`
+- `День`
+- `Неделя`
+- `Месяц`
 
-### 6.1 Vector (set rarely; the “route”)
-Example fields:
-```yaml
-income_target: 500
-weight_range: "73-75"
-project_goal: "1 completed commercial product"
-max_hours_week: 35
-horizon_months: 12
-```
+Активный раздел подчёркивается тонким акцентом.
 
-### 6.2 Day Log (daily; ultra-short)
-Fields (V1):
-- `deep_hours` (number)
-- `training` (0/1 or enum)
-- `steps` (number)
-- `strategic_move` (short string, optional)
-- `noise_hours` (number; “time that went nowhere”)
+## 4. Экранные требования
 
-Notes:
-- Daily entry should be possible **only when there’s something to log**.
-- Avoid long reflection text in daily mode.
+### `/today`
+- Заголовок: `День · {дата}`.
+- Дата редактируема через календарь.
+- Если дата в прошлом, показывается `Просмотр прошлой даты` + возврат к сегодня.
+- При наличии записи всегда показывается `Обновлено · {время}`.
+- Секции:
+  - `Фокус`: deep minutes, unfocused minutes.
+  - `Проект`: active project (read-only), key move.
+  - `Тело`: тренировки (multi-select), шаги.
+- `Нет` в тренировках — эксклюзивный выбор.
+- Кнопка: `Зафиксировать день`.
+- Редактирование разрешено всегда.
 
-### 6.3 Week Summary (computed + 1 manual quality score)
-Computed:
-- `deep_hours_total`
-- `training_count`
-- `steps_total` / `avg_steps`
-- `%noise = noise_hours_total / (deep_hours_total + noise_hours_total)` (or from total tracked hours)
-- `strategic_moves_count`
+### `/week`
+- Выбор недели по дате.
+- Показываются агрегаты недели, рассчитанные на сервере.
+- Есть статус недели и список флагов отклонений.
+- Поля ввода:
+  - качество траектории `1..5`,
+  - заметка недели.
+- Кнопка: `Сохранить неделю`.
 
-Manual:
-- `trajectory_quality` (1–5): “strategic progress vs fuss”
+### `/month`
+- Заголовок: `Месяц · {Mon YYYY}`.
+- Справа статус дохода: `впереди / по плану / отставание`.
+- Компоновка: строго 2 блока:
+  1. `Общий итог`
+  2. `По неделям`
+- В `Общий итог`:
+  - target income (read-only),
+  - actual income (input),
+  - чек подтверждения `Ввёл`,
+  - delta,
+  - агрегаты фокуса и тела,
+  - trajectory quality `1..5`,
+  - поле корректировки следующего месяца.
+- В `По неделям`: deep minutes, key moves, trainings по неделям месяца.
+- Действия:
+  - `Сохранить месяц`,
+  - `Зафиксировать месяц`.
+- После фиксации:
+  - показывается `Зафиксировано · {время}`,
+  - поля месяца становятся read-only.
 
-## 7) Navigation logic (metrics)
-### Speed
-A simple starting metric:
-```text
-weekly_velocity = deep_hours_total + strategic_moves_count * 2
-```
+### `/vector`
+- Редактирование долгосрочных констант:
+  - старт,
+  - горизонт,
+  - цель дохода,
+  - диапазон веса,
+  - цель проекта,
+  - лимит часов в неделю.
 
-### Deviation rules (starter triggers)
-Deviation if (examples):
-- **2 weeks подряд**: `strategic_moves_count == 0`
-- OR **noise% > 30%** for a week (tunable)
+## 5. Техническая спецификация
 
-### Trajectory quality
-- Weekly manual score 1–5
-- Monthly check: “am I building an asset or just staying busy?”
+- Next.js App Router + TypeScript.
+- Мутации через Server Actions.
+- Минимальный клиентский JavaScript.
+- Хранение в PostgreSQL (`DATABASE_URL`).
+- Инициализация схемы при старте через `lib/db.ts`.
 
-## 8) UX / Product direction
-You self-identify as **product/UX-first**.
+Схема БД (`db/schema.sql`):
+- `vector`
+- `projects`
+- `days`
+- `day_training`
+- `weeks`
+- `month_reviews`
+- `month_week_income`
 
-V1 should be:
-- Minimal web UI (for yourself)
-- Simple and fast
-- No heavy infrastructure in V1 UX (avoid “meta-work”)
+## 6. Вычисления
 
-## 9) V1 app shape (screens)
-3 screens only:
-1. **Today**
-   - quick inputs: deep hours, training, steps, strategic move, noise hours
-2. **Week**
-   - computed summary + status (green/yellow/red)
-   - enter 1–5 trajectory quality
-3. **Vector**
-   - view/edit route constants
+Все расчёты выполняются на сервере:
+- недельные и месячные агрегаты,
+- noise %,
+- speed,
+- статус дохода.
 
-No auth, no roles, no complex graphs in V1.
+## 7. UI-ограничения
 
-## 10) Tech direction (V1, SaaS-ready)
-Suggested stack direction:
-- Web app
-- Local DB (SQLite) to start
-- Keep architecture clean so SaaS is possible later:
-  - separate domain model
-  - migrations
-  - event timestamps
-  - user concept can be added later even if single-user now
-
-## 11) Meta Log (product discovery for future SaaS)
-A dedicated place to capture:
-- “What annoyed me?”
-- “What did I want to automate?”
-- “What would I pay for if this was polished?”
-
-This becomes the raw input for the commercial product roadmap after ~90 days of usage.
-
-## 12) Non-goals (avoid early)
-- Overly complex hierarchies (projects/subprojects/categories OKRs everywhere)
-- Daily essays / long reflections
-- Heavy dashboards or complicated automation before usage proves value
-- “Mentor-driven” steering
-
----
-
-## Quick one-paragraph definition
-**Vector OS V1** is a self-owned, minimal web tool that lets you log 5 daily numbers/flags and automatically produces weekly navigation signals for speed, deviation, and trajectory quality — designed from day one with a clean data model so it can later evolve into a multi-user SaaS.
+- Без графиков.
+- Без анимаций.
+- Без геймификации.
+- Без цветных декоративных секций.
+- Типографика важнее рамок и декора.
+- Спокойная, нейтральная, мобильная форма.

@@ -1,0 +1,27 @@
+<svg width="1440" height="900" viewBox="0 0 1440 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1440" height="900" fill="#F3F4F6"/>
+
+  <!-- Center group -->
+  <g transform="translate(720 408)">
+    <!-- Pulse ring -->
+    <circle cx="0" cy="0" r="22" stroke="#F4B400" stroke-width="2" opacity="0.4"/>
+    <!-- Compass base -->
+    <circle cx="0" cy="0" r="22" fill="#FFFFFF" stroke="#1F2937" stroke-width="1.5"/>
+    <!-- Compass dot -->
+    <circle cx="0" cy="0" r="5" fill="#F4B400"/>
+  </g>
+
+  <!-- Title -->
+  <text x="720" y="486" text-anchor="middle" fill="#1F2937"
+    font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif"
+    font-size="28" font-weight="600" letter-spacing="-0.28">
+    Придерживайся своего вектора
+  </text>
+
+  <!-- Subtitle -->
+  <text x="720" y="516" text-anchor="middle" fill="#6B7280"
+    font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif"
+    font-size="13" font-weight="400">
+    Загружаем данные...
+  </text>
+</svg>

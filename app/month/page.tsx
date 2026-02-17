@@ -1,12 +1,14 @@
 import { saveMonthAction } from "@/app/actions";
 import { Shell } from "@/components/Shell";
 import { formatTimeHm, getMonthKey, getMonthLabel, getMonthRange } from "@/lib/date";
-import { ensureVector, getIncomeStatus, getMonthReview, getMonthWeeks, getRangeDayStats } from "@/lib/domain";
+import { ensureVector, getIncomeStatus, getMonthReview, getMonthWeeks, getRangeDayStats, getSleepTrendVsPrevMonth } from "@/lib/domain";
+import type { Trend } from "@/lib/types";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 const getParam = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 export const dynamic = "force-dynamic";
+const trendArrow: Record<Trend, string> = { up: "↑", flat: "→", down: "↓", na: "·" };
 
 export default async function MonthPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
@@ -17,6 +19,7 @@ export default async function MonthPage({ searchParams }: { searchParams: Promis
   const monthRange = getMonthRange(month);
   const monthStats = await getRangeDayStats(monthRange.start, monthRange.end);
   const weeks = getMonthWeeks(month);
+  const sleepTrendVsPrevMonth = await getSleepTrendVsPrevMonth(month, monthStats.sleep_avg);
 
   const income = getIncomeStatus(vector.income_target, review?.income_actual ?? null);
   const avgDeepPerWeek = weeks.length ? Math.round(monthStats.deep_minutes_total / weeks.length) : 0;
@@ -81,6 +84,17 @@ export default async function MonthPage({ searchParams }: { searchParams: Promis
               </div>
 
               <div>
+                <h3>Сон</h3>
+                <p className="month-meta">
+                  avg {monthStats.sleep_avg === null ? "—" : `${monthStats.sleep_avg.toFixed(1)}h`} · внесено {monthStats.sleep_tracked_days} дней
+                </p>
+                <p className="month-meta">
+                  Разброс: {monthStats.sleep_consistency === null ? "—" : `${monthStats.sleep_consistency.toFixed(1)}h`}
+                </p>
+                <p className="month-meta">Тренд к прошлому месяцу: {trendArrow[sleepTrendVsPrevMonth]}</p>
+              </div>
+
+              <div>
                 <h3>Качество</h3>
                 <label>Оценка траектории</label>
                 <div className="score-row">
@@ -131,6 +145,12 @@ export default async function MonthPage({ searchParams }: { searchParams: Promis
                         <div>
                           <span>Тренировки</span>
                           <strong>{stats.trainings_count}</strong>
+                        </div>
+                        <div>
+                          <span>Сон</span>
+                          <strong>
+                            {stats.sleep_avg === null ? "—" : `${stats.sleep_avg.toFixed(1)}h`} (n={stats.sleep_tracked_days})
+                          </strong>
                         </div>
                       </div>
                     </article>

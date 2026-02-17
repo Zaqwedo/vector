@@ -2,7 +2,7 @@ import Link from "next/link";
 import { PropsWithChildren } from "react";
 
 type ShellProps = PropsWithChildren<{
-  active: "vector" | "day" | "week" | "month";
+  active: "vector" | "day" | "notes" | "week" | "month";
 }>;
 
 export function Shell({ active, children }: ShellProps) {
@@ -16,6 +16,9 @@ export function Shell({ active, children }: ShellProps) {
           </Link>
           <Link className={active === "day" ? "active" : ""} href="/today">
             День
+          </Link>
+          <Link className={active === "notes" ? "active" : ""} href="/notes">
+            Заметки
           </Link>
           <Link className={active === "week" ? "active" : ""} href="/week">
             Неделя
